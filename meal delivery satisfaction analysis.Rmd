@@ -1,0 +1,258 @@
+---
+title: "Analyzing Survey Data from a Prepared Meal Delivery Service Company"
+author: "Apoorva Dudani"
+date: "2022-12-30"
+output: pdf_document
+---
+
+## In this report, I analyze data collected by a local company that prepares meals and ships them to the customer’s home. Their marketing group sent out a survey to their customer list and received responses from 600 current customers. 
+
+## The survey included questions about a customer’s age (‘age’), annual income (in tens of thousands of dollars) (‘annual_income’), typical daily commute time (in minutes)(‘commute_time’), a scale that measured their openness to new experiences (‘open_personality’), diet preference (‘diet’), whether the receive meals need assembling (‘assemble_meals’), whether they live with others (‘live_with_others’), whether they need a gluten-free diet (‘gluten_free’), and finally, a scale that measured customer satisfaction with the product (‘satisfaction’).
+
+## I use these to answer two research questions, and use a significance level (alpha) = .05 for all the statistical tests I conduct.
+
+```{r}
+library(ggplot2)
+library(afex)
+library(emmeans)
+library(dplyr)
+library(car)
+library(corrplot)
+mealdelivery.df = read.csv("/Users/Archana/Desktop/usfca/github projects/project 2/project 2.csv", header = T)
+str(mealdelivery.df)
+```
+
+I see that there are 4 variables listed as character variables. I check the number of levels of each of these character variables.
+
+```{r}
+table(mealdelivery.df$assemble_meals)
+table(mealdelivery.df$live_with_others)
+table(mealdelivery.df$gluten_free)
+table(mealdelivery.df$diet)
+```
+
+diet has 3 levels, and the other variables are binary with yes/no:
+
+assemble_meals (binary)
+live_with_others (binary)
+gluten_free (binary)
+
+First, I declare each of these four variables as a ‘factor’ variable
+
+Then, JUST FOR THE BINARY VARIALBES, I create a numeric version of each variable in which yes = 1 and no = 0. As you’ll see below, I do not do this coding for the one categorical variable with 3 levels.
+
+I need to do this coding for the categorical variables because some R packages require such variables to be recognized as factors and some require that they are numeric.
+
+```{r}
+mealdelivery.df$assemble_meals <- factor(mealdelivery.df$assemble_meals, levels=c("yes","no"), labels=c("yes","no"))
+mealdelivery.df$num_assemble_meals <- factor(mealdelivery.df$assemble_meals, levels=c("yes","no"), labels=c(1,0))
+mealdelivery.df$num_assemble_meals <- as.numeric(as.character(mealdelivery.df$num_assemble_meals))
+
+mealdelivery.df$live_with_others <- factor(mealdelivery.df$live_with_others, levels=c("yes","no"), labels=c("yes","no"))
+mealdelivery.df$num_live_with_others <- factor(mealdelivery.df$live_with_others, levels=c("yes","no"), labels=c(1,0))
+mealdelivery.df$num_live_with_others <- as.numeric(as.character(mealdelivery.df$num_live_with_others))
+
+mealdelivery.df$gluten_free <- factor(mealdelivery.df$gluten_free, levels=c("yes","no"), labels=c("yes","no"))
+mealdelivery.df$num_gluten_free <- factor(mealdelivery.df$gluten_free, levels=c("yes","no"), labels=c(1,0))
+mealdelivery.df$num_gluten_free <- as.numeric(as.character(mealdelivery.df$num_gluten_free))
+
+mealdelivery.df$diet <- factor(mealdelivery.df$diet, levels=c("AllFoodTypes","Vegan", "Vegetarian"), labels=c("AllFoodTypes","Vegan", "Vegetarian"))
+```
+
+# Research Question 1
+## What is the estimated mean satisfaction level according to a customer’s diet type? Are there an important difference in mean satisfaction between these groups?
+
+Variables to analyze are diet and satisfaction, and I want to know if these two variables are related.
+
+Diet is categorical (specifically, 3 levels), and satisfaction is numeric, so I use ANOVA to compare mean satisfaction levels between the three groups of customers.
+
+*Null hypothesis: mean satisfaction is equal between the three diet groups (diet type and satisfaction are not related)*
+
+*Alternative hypothesis: mean satisfaction differs at least between one group and the others (diet type and satisfaction are related)*
+
+First, I create a histogram that displays the satisfaction according to each of the three diet types.
+
+```{r}
+ggplot(mealdelivery.df, aes(x = satisfaction, fill = diet )) + geom_histogram()
+```
+
+Now, I perform the ANOVA
+
+
+```{r}
+aov_oneway =aov_ez(id = "cust.id", 
+       dv = "satisfaction",
+       between = "diet",
+       data = mealdelivery.df)
+summary(aov_oneway)
+aov_oneway
+```
+
+I see that the p-value for the F statistic is greater than a significance level of .05, which indicates that the test result is not significant.
+
+Thus, I fail to reject the null hypothesis.
+
+The test result suggests that there are no differences in mean satisfaction between the three diet groups.
+
+Before I deliver an executive summary to my client, I check the sample size of each of the diet groups.
+
+```{r}
+table(mealdelivery.df$diet)
+```
+The sample size of each diet groups is greater than 30, so I don’t need to worry about testing the assumption of normality. (If any one of the sample sizes had been <30, then I would need to test the assumption of normality using the Shapiro-Wilk test that I performed when checking this assumption for a t-test)
+
+Next, I need to test the assumption of homogeneity of variance, and I use Levene’s test for this.
+
+*The null hypothesis is that the variances are equal in the respective populations*
+
+*The alternative hypothesis is that at least one variance in the respective populations differs from the others*
+
+```{r}
+leveneTest(satisfaction ~ diet, data = mealdelivery.df)
+```
+
+The test statistic for Levene’s test is not significant (the p value is > .05), so I do not reject the null hypothesis. I move forward in interpreting the test result from the ANOVA to my client.
+
+## Executive Summary: The three consumer groups based on the three diet types do not differ on average in their satisfaction with the product. Thus, any effort to improve satisfaction not need take into account the diet preferences of the consumers.
+
+# Research Question 2
+## The client wants to understand what variables are related to consumer satisfaction. Which variables are related to satisfaction and which are not?
+
+The outcome variable is satisfaction. I examine the distribution of satisfaction scores to see if there are any outliers:
+
+
+```{r}
+g = mealdelivery.df$satisfaction
+h <- hist(g, breaks = 10, density = 10,
+          col = "lightgray", xlab = "x-variable", main = "observed with normal overlay") 
+xfit <- seq(min(g), max(g), length = 40) 
+yfit <- dnorm(xfit, mean = mean(g), sd = sd(g)) 
+yfit <- yfit * diff(h$mids[1:2]) * length(g) 
+
+lines(xfit, yfit, col = "black", lwd = 2)
+```
+
+The distribution for Satisfaction looks fairly symmetric and I don’t see any unusual values in either tail.
+
+Next, let’s take a look at the distributions of the numeric variables that I will test to see if they are related to satisfaction. Let’s display each with a histogram and then in a scatterplot with satisfaction.
+
+**age**
+
+```{r}
+g = mealdelivery.df$age
+h <- hist(g, breaks = 10, density = 10,
+          col = "lightgray", xlab = "x-variable", main = "observed with normal overlay") 
+xfit <- seq(min(g), max(g), length = 40) 
+yfit <- dnorm(xfit, mean = mean(g), sd = sd(g)) 
+yfit <- yfit * diff(h$mids[1:2]) * length(g) 
+
+lines(xfit, yfit, col = "black", lwd = 2)
+
+age_model <- lm(satisfaction ~ age,data=mealdelivery.df)
+plot(satisfaction ~ age, data=mealdelivery.df)
+abline(age_model)
+```
+
+**annual_income**
+```{r}
+g = mealdelivery.df$annual_income
+h <- hist(g, breaks = 10, density = 10,
+          col = "lightgray", xlab = "x-variable", main = "observed with normal overlay") 
+xfit <- seq(min(g), max(g), length = 40) 
+yfit <- dnorm(xfit, mean = mean(g), sd = sd(g)) 
+yfit <- yfit * diff(h$mids[1:2]) * length(g) 
+
+lines(xfit, yfit, col = "black", lwd = 2)
+
+annual_income_model <- lm(satisfaction ~ annual_income,data=mealdelivery.df)
+plot(satisfaction ~ annual_income, data=mealdelivery.df)
+abline(annual_income_model)
+```
+
+**commute_time**
+
+```{r}
+g = mealdelivery.df$commute_time
+h <- hist(g, breaks = 10, density = 10,
+          col = "lightgray", xlab = "x-variable", main = "observed with normal overlay") 
+xfit <- seq(min(g), max(g), length = 40) 
+yfit <- dnorm(xfit, mean = mean(g), sd = sd(g)) 
+yfit <- yfit * diff(h$mids[1:2]) * length(g) 
+
+lines(xfit, yfit, col = "black", lwd = 2)
+
+commute_time_model <- lm(satisfaction ~ commute_time,data=mealdelivery.df)
+plot(satisfaction ~ commute_time, data=mealdelivery.df)
+abline(commute_time_model)
+```
+
+**open_personality**
+
+```{r}
+g = mealdelivery.df$open_personality
+h <- hist(g, breaks = 10, density = 10,
+          col = "lightgray", xlab = "x-variable", main = "observed with normal overlay") 
+xfit <- seq(min(g), max(g), length = 40) 
+yfit <- dnorm(xfit, mean = mean(g), sd = sd(g)) 
+yfit <- yfit * diff(h$mids[1:2]) * length(g) 
+
+lines(xfit, yfit, col = "black", lwd = 2)
+
+open_personality_model <- lm(satisfaction ~ open_personality,data=mealdelivery.df)
+plot(satisfaction ~ open_personality, data=mealdelivery.df)
+abline(open_personality_model)
+```
+
+I use multiple regression to test which variables are related to satisfaction with the product. I choose multiple regression because I have one numeric outcome variable and a set of explanatory variables (some of which are categorical and some are numeric)
+
+The analysis provides a test for each explanatory variable. There is a null and an alternative hypothesis for the effect of each explanatory variable on the outcome variable:
+
+*Null hypothesis: The variable is not related to satisfaction*
+
+*Alternative hypothesis: The variable is related to satisfaction*
+
+Let’s first examine the correlations between each explanatory variable and satisfaction, as well as the correlations between the explanatory variables. Only numeric variables can be used here, so this is where I need to use the numeric values for the binary variables and I won’t include ‘diet’ because it is categorical with 3 levels.
+
+Using the corrplot package, I need to specify the columns of each variable that I want to include in the display. Let’s check the order of the variables in the data frame:
+
+```{r}
+str(mealdelivery.df)
+```
+In the corrplot package, I'd like have satisfaction (the 6th variable) to appear first in the display, followed by the explanatory variables (excluding diet) and using the numeric versions of the three binary variables:
+
+```{r}
+corrplot(cor(mealdelivery.df[ , c(6,7:13)]),method='ellipse',type = 'upper')
+```
+Now, I perform the multiple regression.
+
+Using corrplot, I could not use categorical variables. That is, the package allows only numeric variables.
+
+The multiple regression model will allow for categorical variables, so I can include diet in this analysis. 
+
+```{r}
+model1 <- lm(satisfaction ~ age + annual_income + commute_time + open_personality + num_assemble_meals + num_live_with_others + num_gluten_free + diet, data=mealdelivery.df)
+
+summary(model1)
+```
+The p-values for the t statistics for age, annual_income, commute_time, and open_personality are less than a significance level of .05.
+
+So, for these 4 explanatory variables, I reject the null hypothesis and conclude that each relates to satisfaction (taking into account the associations that each variable in the model has with satisfactions; that is, the individual estimated effects take into account the associations that other variables have with the outcome).
+
+The p-values for the t statistics for num_assemble_meals, num_live_with_others, diet and num_gluten_free are greater than a significance level of .05.
+
+So, for these 4 explanatory variables, I fail to reject the null hypothesis and conclude that none of these variables relate to satisfaction (taking into account the associations that each variable in the model has with satisfactions).
+
+By examining the Adjusted R-squared value (adjusted R squared is less biased relative to the Multiple R squared, so the Adjusted R squared value is usually reported), I see that as a set, the explanatory variables account for about 26% of the variation in satisfaction. This indicates that the client may want to invest more effort into finding other variables that are driving satisfaction.
+
+Let’s now see if I can simplify the model by dropping the 4 variables that were not statistically significant. I’ll compare the fit of the reduced model (I’ll call this reduced model ‘Model 2’) to the full model.
+
+```{r}
+model2 <- lm(satisfaction ~ age + annual_income + commute_time + open_personality, data=mealdelivery.df)
+
+summary(model2)
+anova(model2,model1)
+```
+
+From the ANOVA test used to compare the fit of these two models, the test statistic has a p value that is greater than .05, so the fit of the full model is not statistically different from the fit of the reduced model. In fact, the adjusted R squared value is still at about 26%.
+
+## Executive Summary: Satisfaction with the product is not related to diet type, whether the meal needs assembling, whether the customer lives with others, or whether they have a gluten-free diet. Specifically, age, commute_time and open_personality are positively related to satisfaction, and annual_income is negatively related to satisfaction. Older customers, those who have a relative long commute time and are relatively more open to new experiences are relatively more satisfied with the product. Those with a relatively low annual income are relatively less satisfied with the product.
